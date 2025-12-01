@@ -12,7 +12,58 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import itertools
-from resize import image_aspect
+# existing code...
+try:
+    from resize import image_aspect
+except ModuleNotFoundError:
+    # Fallback: a minimal image_aspect adapter that preserves aspect ratio,
+    # pads to target size and provides the small API used in this repo:
+    #   image_aspect(img, H, W).change_aspect_rate().past_background().PIL2ndarray()
+    #   image_aspect(img, H, W).save_rate() -> (rate, offset)
+    from PIL import Image as _PILImage
+    import numpy as _np
+
+    class image_aspect:
+        def __init__(self, pil_image, H, W):
+            self.img = pil_image.convert('RGB') if isinstance(pil_image, _PILImage.Image) else pil_image
+            self.target_h = H
+            self.target_w = W
+            self._scale = None
+            self._offset = (0, 0)
+        
+        def change_aspect_rate(self):
+            # compute scale and resized image size
+            ow, oh = self.img.size
+            scale = min(self.target_w / float(ow), self.target_h / float(oh))
+            self._scale = scale
+            new_w = max(1, int(round(ow * scale)))
+            new_h = max(1, int(round(oh * scale)))
+            self._resized = self.img.resize((new_w, new_h), _PILImage.BILINEAR)
+            # compute offsets for centering
+            off_x = (self.target_w - new_w) // 2
+            off_y = (self.target_h - new_h) // 2
+            self._offset = (off_x, off_y)
+            return self
+
+        def past_background(self):
+            # paste resized onto black background and store
+            bg = _PILImage.new('RGB', (self.target_w, self.target_h), (0, 0, 0))
+            bg.paste(self._resized, (self._offset[0], self._offset[1]))
+            self._pasted = bg
+            return self
+
+        def PIL2ndarray(self):
+            # return grayscale ndarray (H, W)
+            arr = _np.array(self._pasted.convert('L'))
+            return arr
+
+        def save_rate(self):
+            # return scale and offset as used in code (rate, offset)
+            return (self._scale, _np.array(self._offset))
+ # ...existing code...
+
+
+# from resize import image_aspect
 import os
 #import scratch_3
 from typing import Tuple
