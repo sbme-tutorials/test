@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import pprint
 import transforms
-from data_loader import KFDataset
+from dataloader_fft import KFDataset
 #from models import KFSGNet
 import os
 import argparse
