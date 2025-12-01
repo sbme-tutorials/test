@@ -1,7 +1,50 @@
 import random
 import torch
 import numpy as np
-from resize import image_aspect
+# existing code...
+try:
+    from resize import image_aspect
+except ModuleNotFoundError:
+    from PIL import Image as _PILImage
+    
+    class image_aspect:
+        def __init__(self, pil_image, H, W):
+            # Accept PIL.Image or numpy array
+            if isinstance(pil_image, _PILImage.Image):
+                self.img = pil_image.copy()
+            else:
+                self.img = _PILImage.fromarray(np.asarray(pil_image))
+            self.target_h = int(H)
+            self.target_w = int(W)
+            self._scale = 1.0
+            self._offset = (0, 0)
+
+        def change_aspect_rate(self):
+            ow, oh = self.img.size
+            scale = min(self.target_w / float(ow), self.target_h / float(oh))
+            self._scale = scale
+            new_w = max(1, int(round(ow * scale)))
+            new_h = max(1, int(round(oh * scale)))
+            self._resized = self.img.resize((new_w, new_h), _PILImage.BILINEAR)
+            off_x = (self.target_w - new_w) // 2
+            off_y = (self.target_h - new_h) // 2
+            self._offset = (off_x, off_y)
+            return self
+
+        def past_background(self):
+            mode = 'L' if self._resized.mode == 'L' else 'RGB'
+            bg = _PILImage.new(mode, (self.target_w, self.target_h), 0)
+            bg.paste(self._resized, (self._offset[0], self._offset[1]))
+            self._pasted = bg
+            return self
+        
+        def PIL2ndarray(self):
+            return np.array(self._pasted)
+
+        def save_rate(self):
+            return (self._scale, np.array(self._offset))
+ # ...existing code...
+# from resize import image_aspect
 from torchvision.transforms import functional as F
 from PIL import Image, ImageEnhance
 from PIL.ImageFilter import BLUR
