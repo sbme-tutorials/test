@@ -1,7 +1,26 @@
 import random
 import torch
 import numpy as np
-from resize import image_aspect
+# ...existing code...
+try:
+    from resize import image_aspect
+except ModuleNotFoundError:
+    try:
+        from .resize import image_aspect
+    except Exception:
+        try:
+            from transform_new import image_aspect
+        except Exception:
+            # Fallback: minimal implementation using PIL / numpy
+            from PIL import Image
+            import numpy as np
+            def image_aspect(img, target_size):
+                """Fallback: convert ndarray -> PIL and resize to target_size (width,height)."""
+                if isinstance(img, np.ndarray):
+                    img = Image.fromarray(img)
+                return img.resize(tuple(target_size))
+# ...existing code...
+# from resize import image_aspect
 from torchvision.transforms import functional as F
 from PIL import Image, ImageEnhance
 from PIL.ImageFilter import BLUR
