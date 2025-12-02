@@ -17,6 +17,8 @@ from loss import KpLoss,CLALoss
 import tempfile
 # existing code...
 import torch.distributed as dist
+import glob as _glob
+import json
 
 def reduce_value(value, average=True):
     """Safe reduce: if no distributed init, return value unchanged."""
@@ -148,18 +150,50 @@ def main(args):
         raise EnvironmentError("not find GPU device for training.")
 
      # Auto-detect label folder if config path missing (Kaggle / mounted inputs)
+    # if not os.path.exists(config.get('path_label_train', '')):
+    #     cand = _glob.glob('/kaggle/input/**/**/*_jpg_Label.json', recursive=True)
+    #     if not cand:
+    #         cand = _glob.glob('/kaggle/input/**/*_jpg_Label.json', recursive=True)
+    #     if cand:
+    #         config['path_label_train'] = os.path.dirname(cand[0])
+    #         config['path_label'] = config['path_label_train']
+    #         print(f"Detected label directory: {config['path_label_train']}")
+    #     else:
+    #         print("ERROR: no label json files found under /kaggle/input.")
+    #         print("Set config['path_label_train'] to the directory that contains *_jpg_Label.json files.")
+    #         return
+         # If label folder is missing, try to find jsons next to images; otherwise generate placeholder jsons
     if not os.path.exists(config.get('path_label_train', '')):
-        cand = _glob.glob('/kaggle/input/**/**/*_jpg_Label.json', recursive=True)
-        if not cand:
-            cand = _glob.glob('/kaggle/input/**/*_jpg_Label.json', recursive=True)
-        if cand:
-            config['path_label_train'] = os.path.dirname(cand[0])
+        # try to find existing json labels under the train image path
+        candidates = _glob.glob(os.path.join(config['train_image_path'], '**', '*.json'), recursive=True)
+        if candidates:
+            config['path_label_train'] = os.path.dirname(candidates[0])
             config['path_label'] = config['path_label_train']
             print(f"Detected label directory: {config['path_label_train']}")
         else:
-            print("ERROR: no label json files found under /kaggle/input.")
-            print("Set config['path_label_train'] to the directory that contains *_jpg_Label.json files.")
-            return
+            # collect image files
+            imgs = []
+            for ext in ('*.jpg', '*.jpeg', '*.png'):
+                imgs += _glob.glob(os.path.join(config['train_image_path'], '**', ext), recursive=True)
+            if not imgs:
+                print("ERROR: no images found at", config['train_image_path'])
+                print("Set config['train_image_path'] and config['path_label_train'] correctly and re-run.")
+                return
+            # create writable placeholder label folder and JSONs
+            gen_dir = os.path.join(os.getcwd(), 'generated_labels')
+            os.makedirs(gen_dir, exist_ok=True)
+            for p in imgs:
+                name = os.path.splitext(os.path.basename(p))[0] + '.json'
+                jpath = os.path.join(gen_dir, name)
+                if not os.path.exists(jpath):
+                    with open(jpath, 'w') as f:
+                        # minimal placeholder structure expected by many loaders
+                        json.dump({'image': os.path.basename(p), 'annotations': []}, f)
+            config['path_label_train'] = gen_dir
+            config['path_label'] = gen_dir
+            print("Generated placeholder labels in", gen_dir)
+    # ...existing code...
+      
     # existing code...
     # rank = args.rank
     # device = torch.device(args.device)
