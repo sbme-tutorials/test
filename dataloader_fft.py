@@ -175,20 +175,6 @@ class KFDataset(Dataset):
         self.transforms = transforms
         self.__fold = fold
 
-        # if self.__fold is not None:
-        #     #print("five fold evaluation, using",self.__fold)
-        #     fnames = self.__fold
-        #     self.path_Image = config['train_image_path']
-        # else:
-        #     fnames = glob.glob(self.path_Image + "*.jpg")
-        #     if mode =='train':
-        #         self.path_Image = config['train_image_path']
-        #     else:
-        #         self.path_Image = config['test_image_path']
-        # self.__X = fnames
-        # self.path_label = config['path_label']
-        # self.num_landmark = 24
-
 
         #self.__heatmap = config['heatmap_path']
         if mode =='train':
@@ -270,14 +256,13 @@ class KFDataset(Dataset):
 
 
         #get_id
-        self.image_name = x_name.split('/')[5].split('.')[0]
+        self.image_name = os.path.splitext(os.path.basename(x_name))[0]
+        # self.image_name = x_name.split('/')[5].split('.')[0]
         #print("processing" ,self.image_name)
         #read image
-        img, origin_size = self.readImage(
-            os.path.join(self.path_Image, self.image_name+'.jpg')
-
-        )
-
+        # img, origin_size = self.readImage(
+        #     os.path.join(self.path_Image, self.image_name+'.jpg') )
+        img, origin_size = self.readImage(x_name)
         #Img : pil.module modelu:RGB
 
         #getkeypoints
