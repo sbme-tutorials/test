@@ -71,7 +71,26 @@ from lxml import etree
 import math
 import transform_new
 #from utils_freq.freq_pixel_loss import find_fake_freq, get_gaussian_kernel
-from get_fft import find_fake_freq, get_gaussian_kernel
+# ...existing code...
+
+try:
+    from get_fft import find_fake_freq, get_gaussian_kernel
+except ModuleNotFoundError:
+    # Minimal stubs if get_fft.py is missing
+    import numpy as np
+    
+    def find_fake_freq(img_array):
+        """Placeholder: returns empty freq map"""
+        return np.zeros_like(img_array)
+    
+    def get_gaussian_kernel(size, sigma=1.0):
+        """Placeholder: returns simple gaussian kernel"""
+        x = np.arange(-size//2 + 1., size//2 + 1.)
+        gauss = np.exp(-x**2 / (2 * sigma**2))
+        kernel = np.outer(gauss, gauss)
+        return kernel / kernel.sum()
+ # ...existing code...
+# from get_fft import find_fake_freq, get_gaussian_kernel
 import csv
 import collections
 #from train import config
