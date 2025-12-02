@@ -12,10 +12,6 @@ from dataloader_fft import KFDataset
 #from models import KFSGNet
 import os
 import argparse
-#from multi_train_utils.distributed_utils import init_distributed_mode, dist ,cleanup ,reduce_value
-#from train_eval import evaluate_one
-#rom network import UNet_Pretrained
-#from U2Net import U2Net
 import matplotlib.pyplot as plt
 from loss import KpLoss,CLALoss
 import tempfile
@@ -45,8 +41,8 @@ config['debug_vis'] = False
 config['train_fname'] = ''
 config['test_fname'] =''
 #config ['path_image'] = '/public/huangjunzhang/KeyPointsDetection-master/dataloader_train/'
-config ['test_image_path'] = '/public/huangjunzhang/KeyPointsDetection-master/dataloader_test/'
-config ['train_image_path'] = '/public/huangjunzhang/KeyPointsDetection-master/dataloader_train/'
+config ['test_image_path'] = '/kaggle/input/vindr-spinexray/physionet.org/files/vindr-spinexr/1.0.0/test_images'
+config ['train_image_path'] = '/kaggle/input/annotated-medical-image-dataset-for-spinal-lesions/physionet.org/files/vindr-spinexr/1.0.0/train_images'
 
 # config ['test_image_path'] = '/public/huangjunzhang/KeyPointsDetection-master/lumbar_test/'
 # config ['train_image_path'] = '/public/huangjunzhang/KeyPointsDetection-master/lumbar_train/'
@@ -147,28 +143,6 @@ def calculate_mask(heatmaps_targets):
     mask = mask.float().cuda()
     return mask,[N_idx,C_idx]
 
-
-#
-# def init_distributed_mode(args):
-#     #
-#     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-#         args.rank = int(os.environ["RANK"])
-#         args.world_size = int(os.environ['WORLDZ_SIZE'])
-#         args.gpu = int(os.environ['LOCAL_RANK'])
-#     elif 'SLURM_PROCID' in os.environ:
-#         args.rank = int(os.environ['SLURM_PROCID'])
-#         args.gps = args.rank % torch.cuda.device_count()
-#
-#     else:
-#         print('Not using distributed mode')
-#         args.distributed =False
-#         return
-#     args.distributed = True
-#     torch.cuda.set_device(args.gpu)
-#     args.dist_backend = 'nccl'
-#     dist.barrier()
-
-
 def main(args):
     if torch.cuda.is_available() is False:
         raise EnvironmentError("not find GPU device for training.")
@@ -213,6 +187,14 @@ def main(args):
     # train_sampler = torch.utils.data.distributed.DistributedSampler(trainDataset)
     testDataset = KFDataset(config, mode='test',transforms=data_transforms["val"])
     # test_sampler = torch.utils.data.distributed.DistributedSampler(testDataset)
+    # Skip training if dataset is empty (paths may not exist in this environment)
+    if len(trainDataset) == 0:
+        print(f"⚠️  trainDataset is empty (0 samples). Check config paths:")
+        print(f"  train_image_path: {config['train_image_path']}")
+        print(f"  path_label_train: {config['path_label_train']}")
+        print("Skipping training.")
+        return
+
     if dist.is_available() and dist.is_initialized():
         train_sampler = torch.utils.data.distributed.DistributedSampler(trainDataset)
         test_sampler = torch.utils.data.distributed.DistributedSampler(testDataset)
