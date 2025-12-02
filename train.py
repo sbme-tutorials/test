@@ -19,6 +19,20 @@ import argparse
 import matplotlib.pyplot as plt
 from loss import KpLoss,CLALoss
 import tempfile
+# existing code...
+import torch.distributed as dist
+
+def reduce_value(value, average=True):
+    """Safe reduce: if no distributed init, return value unchanged."""
+    if not (dist.is_available() and dist.is_initialized()):
+        return value
+    if isinstance(value, torch.Tensor):
+        dist.reduce(value, dst=0)
+        if average and dist.get_world_size() > 0:
+            value = value / dist.get_world_size()
+        return value
+    return value
+# existing code...
 config = dict()
 config['lr'] = 0.01
 config['momentum'] = 0.009
@@ -134,8 +148,6 @@ def calculate_mask(heatmaps_targets):
     return mask,[N_idx,C_idx]
 
 
-
-
 #
 # def init_distributed_mode(args):
 #     #
@@ -162,25 +174,25 @@ def main(args):
         raise EnvironmentError("not find GPU device for training.")
     #init_distributed_mode(args=args)
 
-    rank = args.rank
+
+    # existing code...
+    # rank = args.rank
+    # device = torch.device(args.device)
+    # batch_size = args.batch_size
+    #weights_path = args.weights
+    # args.lr *= args.world_size  # 学习率要根据并行GPU的数量进行倍增
+    # provide safe defaults when running single-process (no --rank/--gpu provided)
+    rank = getattr(args, 'rank', 0)
+    args.rank = rank
+    args.gpu = getattr(args, 'gpu', 0)
     device = torch.device(args.device)
     batch_size = args.batch_size
-    #weights_path = args.weights
-    args.lr *= args.world_size  # 学习率要根据并行GPU的数量进行倍增
-
-    #train_info, val_info, num_classes = read_split_data(args.data_path)
-    #train_images_path, train_images_label = train_info
-    #val_images_path, val_images_label = val_info
+    # adjust lr only if world_size provided
+    if hasattr(args, 'world_size') and args.world_size is not None:
+        args.lr *= args.world_size  # 学习率要根据并行GPU的数量进行倍增
+# ...existing code..
+   
     pprint.pprint(config)
-
-
-    #criterion2 = nn.P()
-    #optimizer = optim.SGD(net.parameters(), lr=config['lr'], momentum=config['momentum'] , weight_decay=config['weight_decay'])
-    #optimizer = optim.Adam(net.parameters(),lr=config['lr'], weight_decay=config['weight_decay'])
-    # optimizer = optim.RMSprop(net.parameters(),lr=config['lr'],
-    #                                 weight_decay=config['weight_decay'],
-    #                                 momentum=config['momentum'])
-    # 定义 Dataset
 
     data_transforms = {
         "train": transforms.Compose([
@@ -188,7 +200,6 @@ def main(args):
                                      transforms.Blur(),
                                      transforms.Brightness(),
                                      transforms.ToTensor(),
-
                                      # transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
                                      ]),
 
@@ -199,9 +210,17 @@ def main(args):
 
 
     trainDataset = KFDataset(config , mode='train', transforms=data_transforms["train"])
-    train_sampler = torch.utils.data.distributed.DistributedSampler(trainDataset)
+    # train_sampler = torch.utils.data.distributed.DistributedSampler(trainDataset)
     testDataset = KFDataset(config, mode='test',transforms=data_transforms["val"])
-    test_sampler = torch.utils.data.distributed.DistributedSampler(testDataset)
+    # test_sampler = torch.utils.data.distributed.DistributedSampler(testDataset)
+    if dist.is_available() and dist.is_initialized():
+        train_sampler = torch.utils.data.distributed.DistributedSampler(trainDataset)
+        test_sampler = torch.utils.data.distributed.DistributedSampler(testDataset)
+    else:
+        from torch.utils.data import RandomSampler, SequentialSampler
+        train_sampler = RandomSampler(trainDataset)
+        test_sampler = SequentialSampler(testDataset)
+# ...existing code...
     #testDataLoader = DataLoader(testDataset,1, True, num_workers=8)
     # 将样本索引每batch_size个元素组成一个list
     train_batch_sampler = torch.utils.data.BatchSampler(
@@ -236,7 +255,7 @@ def main(args):
     cudnn.benchmark = True
     #model = KFSGNet()
     model = U2Net(in_channels=1,out_channels=24)
-    model.float().cuda().to(device)
+    model = model.float().cuda().to(device)
     if config['load_pretrained_weights']:
          if (config['checkout'] != ''):
              print("load dict from checkpoint")
@@ -246,14 +265,23 @@ def main(args):
         checkpoint_path = os.path.join(tempfile.gettempdir(),"initial_weights.pt")
         if rank ==0 :
             torch.save(model.state_dict(),checkpoint_path)
-        dist.barrier()
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
 
         model.load_state_dict(torch.load(checkpoint_path,map_location=device))
     # convert to DDP model
-    if args.syncBN:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+    # if args.syncBN:
+    #     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
 
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    # convert to DDP model only when distributed is initialized
+    if dist.is_available() and dist.is_initialized():
+        if args.syncBN:
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    else:
+        # single-process: keep model on device
+        model = model.to(device)
 
     pg = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.SGD(pg, lr=args.lr, momentum=0.9, weight_decay=0.005)
@@ -306,8 +334,7 @@ def main(args):
 
         if (epoch+1) % config['save_freq'] == 0 or epoch == config['epoch_num'] - 1:
             torch.save(model.state_dict(),'./Checkpoints/kd_MLTGPU_epoch_{}_model.ckpt'.format(epoch))
-            #evaluate_one(model=model, data_loader=valdatasetloader)
-            #evaluate_one(model=model, dataloader=testDataLoader)
+            
 
     plt.figure()
     plt.plot(train_loss, 'b-', label='Recon_loss')
@@ -317,9 +344,6 @@ def main(args):
 
 if __name__ == '__main__':
 
-
-
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=config['epoch_num'])
     parser.add_argument('--batch-size', type=int, default=config['batch_size'])
@@ -327,18 +351,10 @@ if __name__ == '__main__':
     parser.add_argument('--lrf', type=float, default=0.1)
     # 是否启用SyncBatchNorm
     parser.add_argument('--syncBN', type=bool, default=True)
-
-
-
-    # parser.add_argument('--weights', type=str, default='resNet34.pth',
-    #                     help='initial weights path')
-    # parser.add_argument('--freeze-layers', type=bool, default=False)
-    # 不要改该参数，系统会自动分配
     parser.add_argument('--device', default='cuda', help='device id (i.e. 0 or 0,1 or cpu)')
     # 开启的进程数(注意不是线程),不用设置该参数，会根据nproc_per_node自动设置
     parser.add_argument('--world-size', default=4, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist-url', default='env://', help='url used to set up distributed training')
     opt = parser.parse_args()
-
     main(opt)
