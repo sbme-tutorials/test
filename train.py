@@ -146,9 +146,20 @@ def calculate_mask(heatmaps_targets):
 def main(args):
     if torch.cuda.is_available() is False:
         raise EnvironmentError("not find GPU device for training.")
-    #init_distributed_mode(args=args)
 
-
+     # Auto-detect label folder if config path missing (Kaggle / mounted inputs)
+    if not os.path.exists(config.get('path_label_train', '')):
+        cand = _glob.glob('/kaggle/input/**/**/*_jpg_Label.json', recursive=True)
+        if not cand:
+            cand = _glob.glob('/kaggle/input/**/*_jpg_Label.json', recursive=True)
+        if cand:
+            config['path_label_train'] = os.path.dirname(cand[0])
+            config['path_label'] = config['path_label_train']
+            print(f"Detected label directory: {config['path_label_train']}")
+        else:
+            print("ERROR: no label json files found under /kaggle/input.")
+            print("Set config['path_label_train'] to the directory that contains *_jpg_Label.json files.")
+            return
     # existing code...
     # rank = args.rank
     # device = torch.device(args.device)
