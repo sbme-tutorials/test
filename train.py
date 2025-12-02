@@ -19,6 +19,7 @@ import tempfile
 import torch.distributed as dist
 import glob as _glob
 import json
+from U2Netnew import U2Net  # or your actual U2Net import
 
 def reduce_value(value, average=True):
     """Safe reduce: if no distributed init, return value unchanged."""
@@ -173,7 +174,7 @@ def main(args):
         else:
             # collect image files
             imgs = []
-            for ext in ('*.jpg', '*.jpeg', '*.png'):
+            for ext in ('*.jpg', '*.jpeg', '*.png', '*.dcm', '*.DCM', '*.dicom'):
                 imgs += _glob.glob(os.path.join(config['train_image_path'], '**', ext), recursive=True)
             if not imgs:
                 print("ERROR: no images found at", config['train_image_path'])
