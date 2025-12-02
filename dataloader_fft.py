@@ -203,6 +203,11 @@ class KFDataset(Dataset):
             fnames = self.__fold
         else:
             fnames = glob.glob(self.path_Image + "*.jpg")
+            fnames += glob.glob(self.path_Image + "*.jpeg")
+            fnames += glob.glob(self.path_Image + "*.png")
+            fnames += glob.glob(self.path_Image + "*.dcm")
+            fnames += glob.glob(self.path_Image + "*.dicom")
+            fnames = sorted(fnames)
 
         self.__X = fnames
         self.path_label = config['path_label']
@@ -530,7 +535,8 @@ class KFDataset(Dataset):
 
 
     def readImage(self,path):
-        img = Image.open(path).convert('RGB')
+        img = _load_image(path)
+        # img = Image.open(path).convert('RGB')
         origin_size = img.size
         return img,origin_size
 
